@@ -1,0 +1,43 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/home/chart1/metrics_ws/devel/include/**",
+        "/home/chart1/interbotix_ws/devel/include/**",
+        "/home/chart1/realsense_ws/devel/include/**",
+        "/home/chart1/apriltag_ws/devel_isolated/apriltag_ros/include/**",
+        "/home/chart1/apriltag_ws/devel_isolated/apriltag/include/**",
+        "/opt/ros/noetic/include/**",
+        "/home/chart1/apriltag_ws/src/apriltag_ros/apriltag_ros/include/**",
+        "/home/chart1/metrics_ws/src/cv_camera/include/**",
+        "/home/chart1/interbotix_ws/src/interbotix_ros_core/interbotix_ros_xseries/dynamixel_workbench_toolbox/include/**",
+        "/home/chart1/interbotix_ws/src/interbotix_ros_toolboxes/interbotix_common_toolbox/interbotix_moveit_interface/include/**",
+        "/home/chart1/interbotix_ws/src/interbotix_ros_toolboxes/interbotix_xs_toolbox/interbotix_xs_ros_control/include/**",
+        "/home/chart1/interbotix_ws/src/interbotix_ros_toolboxes/interbotix_xs_toolbox/interbotix_xs_rviz/include/**",
+        "/home/chart1/interbotix_ws/src/interbotix_ros_core/interbotix_ros_xseries/interbotix_xs_sdk/include/**",
+        "/home/chart1/interbotix_ws/src/kobuki/kobuki_auto_docking/include/**",
+        "/home/chart1/interbotix_ws/src/kobuki/kobuki_bumper2pc/include/**",
+        "/home/chart1/interbotix_ws/src/kobuki/kobuki_controller_tutorial/include/**",
+        "/home/chart1/interbotix_ws/src/kobuki/kobuki_keyop/include/**",
+        "/home/chart1/interbotix_ws/src/kobuki/kobuki_node/include/**",
+        "/home/chart1/interbotix_ws/src/kobuki/kobuki_random_walker/include/**",
+        "/home/chart1/interbotix_ws/src/kobuki/kobuki_safety_controller/include/**",
+        "/home/chart1/realsense_ws/src/realsense-ros/realsense2_camera/include/**",
+        "/home/chart1/interbotix_ws/src/yujin_ocs/yocs_cmd_vel_mux/include/**",
+        "/home/chart1/interbotix_ws/src/yujin_ocs/yocs_controllers/include/**",
+        "/home/chart1/interbotix_ws/src/yujin_ocs/yocs_velocity_smoother/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}

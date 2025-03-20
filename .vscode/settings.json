@@ -13,5 +13,19 @@
         "titleBar.inactiveBackground": "#bb1c5299",
         "titleBar.inactiveForeground": "#e7e7e799"
     },
-    "peacock.color": "#bb1c52"
+    "peacock.color": "#bb1c52",
+    "python.autoComplete.extraPaths": [
+        "/home/chart1/metrics_ws/devel/lib/python3/dist-packages",
+        "/home/chart1/interbotix_ws/devel/lib/python3/dist-packages",
+        "/home/chart1/apriltag_ws/devel_isolated/apriltag_ros/lib/python3/dist-packages",
+        "/home/chart1/realsense_ws/devel/lib/python3/dist-packages",
+        "/opt/ros/noetic/lib/python3/dist-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/chart1/metrics_ws/devel/lib/python3/dist-packages",
+        "/home/chart1/interbotix_ws/devel/lib/python3/dist-packages",
+        "/home/chart1/apriltag_ws/devel_isolated/apriltag_ros/lib/python3/dist-packages",
+        "/home/chart1/realsense_ws/devel/lib/python3/dist-packages",
+        "/opt/ros/noetic/lib/python3/dist-packages"
+    ]
 }
