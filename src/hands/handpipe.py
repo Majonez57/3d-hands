@@ -17,6 +17,8 @@ mp_drawing = mp.solutions.drawing_utils
 mp_drawing_styles = mp.solutions.drawing_styles
 mp_hands = mp.solutions.hands
 
+# roslaunch realsense2_camera rs_camera.launch align_depth:=true color_width:=424 color_height:=240 color_fps:=60 filters:=pointcloud
+
 class Hands:
     def __init__(self, imageTopic2D, depthTopic, infoTopic):
 
