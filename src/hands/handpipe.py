@@ -30,7 +30,7 @@ class Hands:
         self.publishers = {
             "image_with_hands": rospy.Publisher('image_with_hands', Image, queue_size=1),
             "3D_index_point" : rospy.Publisher('index_point', Marker, queue_size=10),
-            "3D_hand" : rospy.Publisher('left_hand_3D', HandResult3D, queue_size=2)
+            "3D_hand" : rospy.Publisher('hand_3d', HandResult3D, queue_size=2)
         }
 
         image_sub = message_filters.Subscriber(imageTopic2D, Image)
@@ -145,7 +145,8 @@ class Hands:
 
                         if idx == 0:
                             handA.append(point)
-                        else:landmarks.append(landmark)
+                        else:
+                            landmarks.append(landmark)
                             handB.append(point)
 
                 except IndexError: # This is really really lazy
