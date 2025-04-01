@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+
+import rospy
+from art_detection.msg import HandResult3D, HandLandmark3D
+from geometry_msgs.msg import Point
+from std_msgs.msg import Header
+import os
+import pandas as pd
+
+# When this file is run, hand trajectories are recorded
+# and saved as CSV
+
+def publish_trajectories(pub: rospy.Publisher, trajectories):
+    # df magic
+    timewise_df = pd.concat(trajectories.values(), keys=trajectories.keys(), names=['landmarkID'])
+    timewise_df.reset_index(level='landmarkID', inplace=True) 
+    timewise_df.sort_values(by='time', inplace=True)
+
+    start_time = rospy.Time.now().to_sec()
+    rate = rospy.Rate(1000) # High rate for precise durations 
+
+    for time, group in timewise_df.groupby('time'):
+        current_time = rospy.Time.now().to_sec() 
+        elapsed_time = current_time - start_time
+        sleep_time = time - timewise_df['time'].min() -elapsed_time
+        
+        if sleep_time > 0:
+            rospy.sleep(sleep_time)
+
+        landmarks = []
+        for _, row in group.iterrows():
+            point = Point(x=row['x'],y=row['y'],z=row['z'])
+            landmark = HandLandmark3D(
+                point = point,
+                landmarkID = int(row['landmarkID'])
+            )
+            landmarks.append(landmark)
+        
+        topub = HandResult3D(
+            header= Header(
+                stamp=rospy.Time.now(),
+                frame_id="world" #TODO dytnamic
+                ),
+            landmarks = landmarks
+        )
+
+        pub.publish(topub)
+        rospy.loginfo(f"Published Landmarks at {time}")
+        rate.sleep()
+
+def load_trajectories(dir_path: str, landmark_ids):
+    # Loads trajectory data from CSV files
+    rospy.logdebug(dir_path)
+    
+    trajectories = {}
+    for id in landmark_ids:
+        filepath = path = f"src/art-detection/data/{dir_path}/landmark_{id}.csv"
+        if not os.path.isfile(filepath):
+            rospy.logerr("The landmark {id} was not recorded! Skipping...")
+            continue
+        else:
+            df = pd.read_csv(filepath)
+            trajectories[id] = df 
+    
+    return trajectories
+
+def main():
+
+    input("Press ENTER to begin replay")    
+
+    rospy.init_node('trajectory_replay', anonymous=True)
+    topic_name = rospy.get_param('~topic_name', '/hand_3d')
+    data_dir = rospy.get_param("~directory", './')
+    landmark_ids = rospy.get_param("~landmark_ids", [])
+
+    if not landmark_ids:
+        rospy.logwarn("No landmark ids were provided. Defaulting to 9")
+        landmark_ids = [9]
+
+    path = f"src/art-detection/data/{data_dir}"
+    if not os.path.exists(path):
+        rospy.logerr(f"The provided trajectory name {data_dir} is invalid. Exiting.")
+        return
+    
+    pub = rospy.Publisher("/hand_3d", HandResult3D, queue_size=10)
+    rospy.sleep(1)
+
+    trajectories = load_trajectories(data_dir, landmark_ids)
+    if not trajectories:
+        rospy.logerr(f"No valid trajectories loaded. Exiting.")
+        return  rospy.loginfo("REPLAYING...")
+    
+    
+    rospy.loginfo("REPLAYING...")
+    publish_trajectories(pub, trajectories)
+    
+    rospy.logwarn("Replay finished. Exiting.")
+
+if __name__ == "__main__":
+    main()
