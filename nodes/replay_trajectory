@@ -9,8 +9,10 @@ import pandas as pd
 
 # When this file is run, hand trajectories are recorded
 # and saved as CSV
+# EXAMPLE USAGE: 
+# rosrun art_detection replay_trajectory.py _directory:=test _landmark_ids:="[0,1,4,5,8]"
 
-def publish_trajectories(pub: rospy.Publisher, trajectories):
+def publish_trajectories(pub: rospy.Publisher, trajectories, frame_id='camera_link'):
     # df magic
     timewise_df = pd.concat(trajectories.values(), keys=trajectories.keys(), names=['landmarkID'])
     timewise_df.reset_index(level='landmarkID', inplace=True) 
@@ -39,7 +41,7 @@ def publish_trajectories(pub: rospy.Publisher, trajectories):
         topub = HandResult3D(
             header= Header(
                 stamp=rospy.Time.now(),
-                frame_id="world" #TODO dytnamic
+                frame_id=frame_id #TODO dytnamic
                 ),
             landmarks = landmarks
         )

@@ -1,10 +1,7 @@
 # This file uses google MediaPipe to detect hand landmarks from a 3D Camera
 import rospy
-import numpy
 import cv_bridge
-import cv2 
 import mediapipe as mp
-import numpy as np
 from std_msgs.msg import ColorRGBA
 from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import Point, Pose
@@ -29,7 +26,6 @@ class Hands:
 
         self.publishers = {
             "image_with_hands": rospy.Publisher('image_with_hands', Image, queue_size=1),
-            "3D_index_point" : rospy.Publisher('index_point', Marker, queue_size=10),
             "3D_hand" : rospy.Publisher('hand_3d', HandResult3D, queue_size=2)
         }
 
@@ -155,27 +151,6 @@ class Hands:
                     
             hand_result.landmarks = landmarks
 
-            acol = ColorRGBA()
-            acol.g = 1
-            acol.a = 0.7
-
-            bcol = ColorRGBA()
-            bcol.b = 1
-            bcol.a = 0.7
-
-            mar = Marker()
-            mar.header.stamp = rospy.Time.now()
-            mar.header.frame_id = 'camera_link'
-            mar.scale.x = 0.03
-            mar.scale.y = 0.03
-            mar.scale.z = 0.03
-            mar.colors = [acol for i in handA] + [bcol for i in handB]
-            mar.color.g = 1
-            mar.color.a = 0.7
-            mar.type = 8
-            mar.points = handA + handB
-            mar.lifetime.secs = 0
-
             # point = PointStamped()
             # point.header.stamp = rospy.Time.now()
             # point.header.frame_id = 'camera_link'
@@ -183,7 +158,6 @@ class Hands:
             # point.point.y = -x
             # point.point.z = -y
 
-            self.publishers["3D_index_point"].publish(mar)
             self.publishers["3D_hand"].publish(hand_result)
             
             # # Draw hand world landmarks.

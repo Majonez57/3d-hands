@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+
+import rospy
+from visualization_msgs.msg import Marker
+from art_detection.msg import HandLandmark3D, HandResult3D
+
+###
+# This file turns published HandResult3D(s) into marker points
+# This is just for Rviz Visualisation.
+###
+
+class HandVisualizer:
+    
+    # landmarks: The points to visualize. If empty, all points published in the hand
+    #            topic will be visualized.
+    def __init__(self, handTopic3d="/hand_3d", landmarks=[], frame_id='camera_link'):
+
+        self.pub = rospy.Publisher('hand_marker', Marker, queue_size=10)
+        self.sub = rospy.Subscriber("/hand_3d", HandResult3D, self._hand_callback)
+
+        self.landmarks = landmarks
+        self.frame_id = frame_id
+
+        rospy.spin()
+
+    def _hand_callback(self, msg: HandResult3D):
+        
+        marker = Marker()
+        marker.header.stamp = rospy.Time.now()
+        marker.header.frame_id = self.frame_id
+        marker.scale.x = 0.03
+        marker.scale.y = 0.03
+        marker.scale.z = 0.03
+        marker.color.g = 1
+        marker.color.a = 0.7
+        marker.type = 8 # A series of cubes
+        marker.points = []
+
+        for landmark in msg.landmarks:
+            landmark: HandLandmark3D
+            if self.landmarks == [] or landmark in self.landmarks:
+                marker.points.append(landmark.point)
+        
+        self.pub.publish(marker)
+
+
+if __name__ == "__main__":
+    rospy.init_node('hand_visualizer')
+    rospy.loginfo("Starting Hand3D Marker Node")
+
+    HandVisualizer()
