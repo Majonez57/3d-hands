@@ -54,6 +54,8 @@ add_message_files(
   ArtResult.msg
   ArtResults.msg
   CameraPoint.msg
+  HandResult3D.msg
+  HandLandmark3D.msg
 )
 
 ## Generate services in the 'srv' folder
@@ -74,6 +76,7 @@ add_message_files(
 generate_messages(
   DEPENDENCIES
   std_msgs
+  geometry_msgs
   sensor_msgs
 )
 

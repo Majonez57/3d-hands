@@ -7,10 +7,13 @@ import mediapipe as mp
 import numpy as np
 from std_msgs.msg import ColorRGBA
 from sensor_msgs.msg import Image, CameraInfo
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import Point, Pose
 from visualization_msgs.msg import Marker
 import message_filters
 import pyrealsense2 as rs2
+
+from art_detection.msg import HandResult3D, HandLandmark3D
+
 
 # Shortcuts
 mp_drawing = mp.solutions.drawing_utils
@@ -26,7 +29,8 @@ class Hands:
 
         self.publishers = {
             "image_with_hands": rospy.Publisher('image_with_hands', Image, queue_size=1),
-            "3D_index_point" : rospy.Publisher('index_point', Marker, queue_size=10)
+            "3D_index_point" : rospy.Publisher('index_point', Marker, queue_size=10),
+            "3D_hand" : rospy.Publisher('left_hand_3D', HandResult3D, queue_size=2)
         }
 
         image_sub = message_filters.Subscriber(imageTopic2D, Image)
@@ -40,7 +44,7 @@ class Hands:
         self.currentImage = None
         self.currentDepth = None
         self.intrinsics = None
-        self.handModel = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.3, min_tracking_confidence=0.3)
+        self.handModel = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.3, min_tracking_confidence=0.3)
     
     def _onImages(self, imagemsg, depthmsg, cameraInfo):
         im = self.bridge.imgmsg_to_cv2(imagemsg, desired_encoding='bgr8')
@@ -78,7 +82,7 @@ class Hands:
         if (image is None):
             rospy.logwarn("No image detected...")
         
-            return 
+            return #241222073405
         elif depth is None:
             rospy.logwarn("No depth detected...")
             return  
@@ -104,11 +108,18 @@ class Hands:
                     
             self.publishers["image_with_hands"].publish(self.bridge.cv2_to_imgmsg(annotated_image, "bgr8"))
 
+            hand_markers = [0,1,4,5,8,9,12,13,16,17,20]
 
-            for finger in [0,4,8,12,16,20]:
+            hand_result = HandResult3D()
+            hand_result.header.frame_id = 'camera_link' # TODO dynamic
+            hand_result.header.stamp = rospy.Time.now()
+
+            landmarks = []
+
+            for marker in hand_markers:
                 try:
-                    tipx = hand_landmarks.landmark[finger].x * image_width
-                    tipy = hand_landmarks.landmark[finger].y * image_height 
+                    tipx = hand_landmarks.landmark[marker].x * image_width
+                    tipy = hand_landmarks.landmark[marker].y * image_height 
                     tipdepth = depth[int(tipy), int(tipx)]/1000
 
                     print(f"index depth: {tipdepth}")
@@ -116,19 +127,32 @@ class Hands:
                     # Deprojection!
                     (x,y,z) = rs2.rs2_deproject_pixel_to_point(self.intrinsics, [tipx, tipy], tipdepth)
                 
+
                     point = Point()
                     point.x = z
                     point.y = -x
                     point.z = -y
+                    # No orientation for now
+                    # The 'facing' direction of the hand may be useful in the future
+                    #point.orientation.w = 1
 
-                    if idx == 0:
-                        handA.append(point)
-                    else:
-                        handB.append(point)
+                    if not (z == 0 and x == 0):
+                        landmark = HandLandmark3D()
+                        landmark.point = point 
+                        landmark.landmarkID = marker
+
+                        landmarks.append(landmark)
+
+                        if idx == 0:
+                            handA.append(point)
+                        else:landmarks.append(landmark)
+                            handB.append(point)
 
                 except IndexError: # This is really really lazy
                     # Avoids the index issue when one landmark is out of index
                     continue
+                    
+            hand_result.landmarks = landmarks
 
             acol = ColorRGBA()
             acol.g = 1
@@ -141,9 +165,9 @@ class Hands:
             mar = Marker()
             mar.header.stamp = rospy.Time.now()
             mar.header.frame_id = 'camera_link'
-            mar.scale.x = 0.02
-            mar.scale.y = 0.02
-            mar.scale.z = 0.02
+            mar.scale.x = 0.03
+            mar.scale.y = 0.03
+            mar.scale.z = 0.03
             mar.colors = [acol for i in handA] + [bcol for i in handB]
             mar.color.g = 1
             mar.color.a = 0.7
@@ -159,6 +183,7 @@ class Hands:
             # point.point.z = -y
 
             self.publishers["3D_index_point"].publish(mar)
+            self.publishers["3D_hand"].publish(hand_result)
             
             # # Draw hand world landmarks.
             
