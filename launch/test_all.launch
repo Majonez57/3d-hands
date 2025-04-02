@@ -1,0 +1,15 @@
+<launch>
+  <!-- Launch the RealSense camera node with specified parameters -->
+  <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+    <arg name="align_depth" value="true"/>
+    <arg name="color_width" value="424"/>
+    <arg name="color_height" value="240"/>
+    <arg name="color_fps" value="60"/>
+    <arg name="filters" value="pointcloud"/>
+  </include>
+
+  <!-- Launch art_detection nodes -->
+  <node pkg="art_detection" type="hand_node" name="hand_node" output="screen"/>
+  <node pkg="art_detection" type="aruco_node" name="aruco_node" output="screen"/>
+  <node pkg="art_detection" type="hand_viz" name="hand_viz" output="screen"/>
+</launch>

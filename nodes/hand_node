@@ -2,6 +2,7 @@
 
 import argparse
 from hands import Hands
+import sys
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Art detects and publisht the information of spotted hands")
@@ -14,5 +15,6 @@ if __name__ == "__main__":
 
     parser.add_argument('--rate', nargs='?', type=int, default=60, help="The maximum rate of detection from this node")
 
-    args = parser.parse_args()
+    args = parser.parse_args(sys.argv[4:])
+    
     Hands.main(**vars(args))
