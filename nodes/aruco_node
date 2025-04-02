@@ -1,0 +1,201 @@
+#!/usr/bin/env python
+import rospy
+import cv2
+import cv2.aruco as aruco
+import numpy as np
+from cv_bridge import CvBridge
+from sensor_msgs.msg import Image, CameraInfo
+from geometry_msgs.msg import TransformStamped
+import tf.transformations
+from visualization_msgs.msg import Marker, MarkerArray
+import tf2_ros
+from std_srvs.srv import Trigger, TriggerResponse
+import tf
+
+# This node wraps OpenCVs aruco library to ros
+
+class CameraArucoDetector:
+    def __init__(self, camera_id, image_topic, cam_info_topic, aruco_dict_name, marker_length):
+        self.camera_id = camera_id
+        self.image_topic = image_topic
+        self.cam_info_topic = cam_info_topic
+        self.marker_length = marker_length  # in meters
+        self.bridge = CvBridge()
+        self.camera_matrix = None
+        self.dist_coeffs = None
+        self.camera_frame = None
+        self.latest_detections = []  # Each detection: (marker_id, rvec, tvec, corners)
+        
+        # Subscribers for image and camera info
+        self.image_sub = rospy.Subscriber(self.image_topic, Image, self.image_callback)
+        self.cam_info_sub = rospy.Subscriber(self.cam_info_topic, CameraInfo, self.cam_info_callback)
+        
+        # TF broadcaster to publish marker transforms relative to the camera frame
+        self.tf_broadcaster = tf2_ros.TransformBroadcaster()
+        # Publisher for visualization in RViz (MarkerArray)
+        self.marker_pub = rospy.Publisher('/aruco_markers', MarkerArray, queue_size=10)
+        
+        # Create the ArUco dictionary and detector parameters
+        self.aruco_dict = aruco.getPredefinedDictionary(getattr(aruco, aruco_dict_name))
+        self.aruco_params = aruco.DetectorParameters()
+        self.detector = aruco.ArucoDetector(self.aruco_dict, self.aruco_params)
+
+        self.prev_tfs = {}
+        self.smoothing_alpha =  0.6 # Smoothing value for published tf
+
+    def cam_info_callback(self, msg):
+        # Save camera calibration parameters (only once)
+        if self.camera_matrix is None:
+            self.camera_matrix = np.array(msg.K).reshape((3, 3))
+            self.dist_coeffs = np.array(msg.D)
+            self.camera_frame = msg.header.frame_id
+            rospy.loginfo("Camera '{}' calibration received.".format(self.camera_id))
+            # Unsubscribe after receiving calibration
+            self.cam_info_sub.unregister()
+
+    def image_callback(self, msg):
+        if self.camera_matrix is None:
+            # Cannot process image until calibration parameters are available.
+            return
+        try:
+            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+        except Exception as e:
+            rospy.logerr("CV Bridge error in camera '{}': {}".format(self.camera_id, e))
+
+        # Detect markers
+        corners, ids, _ = self.detector.detectMarkers(cv_image)
+        self.latest_detections = []  # reset previous detections
+
+        marker_array = MarkerArray()
+        if ids is not None:
+            rospy.loginfo(f"Markers detected: {ids}")
+            # Estimate pose for each detected marker
+            rvecs, tvecs, _ = aruco.estimatePoseSingleMarkers(corners, self.marker_length, 
+                                                               self.camera_matrix, self.dist_coeffs)
+            for i, marker_id in enumerate(ids.flatten()):
+                rvec = rvecs[i]
+                tvec = tvecs[i]
+
+                # Convert rotation vector to matrix
+
+                self.latest_detections.append((int(marker_id), rvec, tvec, corners[i]))
+
+                # Draw marker and axis for debugging (optional)
+                aruco.drawDetectedMarkers(cv_image, corners, ids)
+                cv2.drawFrameAxes(cv_image, self.camera_matrix, self.dist_coeffs, rvec, tvec, self.marker_length * 0.5)
+                
+                # Convert rotation vector to quaternion
+                R_matrix, _ = cv2.Rodrigues(rvec)
+                current_q = self.rotation_matrix_to_quaternion(R_matrix)
+                current_t = tvec[0] #Flatten
+
+                # Here we apply Exponential Moving Average Smoothing
+
+                # If we have some previous transforms, lets smooth
+                if marker_id in self.prev_tfs:
+                    prev_t, prev_q = self.prev_tfs[marker_id]
+                    smooth_t = self.smoothing_alpha * current_t + (1- self.smoothing_alpha) * prev_t
+                    smooth_q = tf.transformations.quaternion_slerp(prev_q, current_q, self.smoothing_alpha)
+                else:
+                    smooth_t = current_t
+                    smooth_q = current_q
+                
+                self.prev_tfs[marker_id] = (smooth_t, smooth_q)
+
+                # Publish TF transform for this marker
+                t = TransformStamped()
+                t.header.stamp = msg.header.stamp
+                t.header.frame_id = self.camera_frame
+                t.child_frame_id = f"{self.camera_id}_marker_{marker_id}"
+                t.transform.translation.x = smooth_t[0]
+                t.transform.translation.y = smooth_t[1]
+                t.transform.translation.z = smooth_t[2]
+                t.transform.rotation.x = smooth_q[0]
+                t.transform.rotation.y = smooth_q[1]
+                t.transform.rotation.z = smooth_q[2]
+                t.transform.rotation.w = smooth_q[3]
+                self.tf_broadcaster.sendTransform(t)
+
+                # Create a visualization marker for RViz
+                marker = Marker()
+                marker.header.frame_id = self.camera_frame
+                marker.header.stamp = msg.header.stamp
+                marker.ns = "{}_aruco".format(self.camera_id)
+                marker.id = marker_id
+                marker.type = Marker.CUBE
+                marker.action = Marker.ADD
+                marker.pose.position.x = smooth_t[0]
+                marker.pose.position.y = smooth_t[1]
+                marker.pose.position.z = smooth_t[2]
+                marker.pose.orientation.x = smooth_q[0]
+                marker.pose.orientation.y = smooth_q[1]
+                marker.pose.orientation.z = smooth_q[2]
+                marker.pose.orientation.w = smooth_q[3]
+                marker.scale.x = self.marker_length
+                marker.scale.y = self.marker_length
+                marker.scale.z = 0.005  # Thin marker visualization
+                marker.color.a = 0.8
+                marker.color.r = 0.0
+                marker.color.g = 1.0
+                marker.color.b = 0.0
+                marker_array.markers.append(marker)
+            
+        # Optionally, display the processed image (for debugging)
+        cv2.imshow("Camera {}".format(self.camera_id), cv_image)
+        cv2.waitKey(1)
+
+
+        # Publish the MarkerArray for visualization in RViz
+        self.marker_pub.publish(marker_array)
+
+    def rotation_matrix_to_quaternion(self, R_matrix):
+        # Build a 4x4 homogeneous transformation matrix
+        M = np.eye(4)
+        M[0:3, 0:3] = R_matrix
+        # Use tf.transformations to convert rotation matrix to quaternion
+        quat = tf.transformations.quaternion_from_matrix(M)
+        return quat
+
+class MultiCameraArucoNode:
+    def __init__(self):
+        rospy.init_node('multi_camera_aruco_node', anonymous=True)
+        # Parameter: list of camera IDs (each camera assumed to publish on "/<id>/image_raw" and "/<id>/camera_info")
+        self.camera_ids = rospy.get_param("~camera_ids", ["camera"])
+        self.marker_length = rospy.get_param("~marker_length", 0.06)  # in meters
+        self.aruco_dict_name = rospy.get_param("~aruco_dict", "DICT_4X4_50")
+        self.detectors = {}
+
+        # Create a detector instance for each camera id
+        for cam_id in self.camera_ids:
+            image_topic = "/{}/color/image_raw".format(cam_id)
+            cam_info_topic = "/{}/color/camera_info".format(cam_id)
+            self.detectors[cam_id] = CameraArucoDetector(cam_id, image_topic, cam_info_topic,
+                                                          self.aruco_dict_name, self.marker_length)
+        # Service to report current poses from all cameras
+        self.pose_service = rospy.Service("~get_aruco_poses", Trigger, self.handle_get_aruco_poses)
+        rospy.loginfo("Multi-camera ArUco Node initialized with cameras: {}".format(self.camera_ids))
+
+    def handle_get_aruco_poses(self, req):
+        # Build a summary string of current marker detections for each camera
+        response_str = ""
+        for cam_id, detector in self.detectors.items():
+            response_str += "Camera '{}': ".format(cam_id)
+            if detector.latest_detections:
+                for detection in detector.latest_detections:
+                    marker_id, rvec, tvec, _ = detection
+                    response_str += "Marker {} at (x: {:.2f}, y: {:.2f}, z: {:.2f}); ".format(
+                        marker_id, tvec[0][0], tvec[0][1], tvec[0][2])
+            else:
+                response_str += "No markers detected. "
+            response_str += "\n"
+        return TriggerResponse(success=True, message=response_str)
+
+    def spin(self):
+        rospy.spin()
+
+if __name__ == '__main__':
+    try:
+        node = MultiCameraArucoNode()
+        node.spin()
+    except rospy.ROSInterruptException:
+        pass
