@@ -22,18 +22,22 @@ mp_hands = mp.solutions.hands
 # roslaunch realsense2_camera rs_camera.launch align_depth:=true color_width:=424 color_height:=240 color_fps:=60 filters:=pointcloud
 
 class Hands:
-    def __init__(self, imageTopic2D: str, depthTopic: str, infoTopic: str):
-
+    def __init__(self, imageTopic2D: str, depthTopic: str, infoTopic: str, camera : str):
+        self.camera_id = camera
         self.bridge = cv_bridge.CvBridge()
 
-        self.publishers = {
-            "image_with_hands": rospy.Publisher('image_with_hands', Image, queue_size=1),
-            "3D_hand" : rospy.Publisher('hand_3d', HandResult3D, queue_size=2)
-        }
+        rospy.init_node(f'{camera}_hands')
 
-        image_sub = message_filters.Subscriber(imageTopic2D, Image)
-        depth_sub = message_filters.Subscriber(depthTopic, Image)
-        info_sub = message_filters.Subscriber(infoTopic, CameraInfo)
+        self.publishers = {
+            "image_with_hands": rospy.Publisher(f'{camera}_image_with_hands', Image, queue_size=1),
+            "3D_hand" : rospy.Publisher(f'{camera}_hand_3d', HandResult3D, queue_size=2)
+        }
+        
+        print(f"/{camera}/{imageTopic2D}")
+
+        image_sub = message_filters.Subscriber(f"/{camera}/{imageTopic2D}", Image)
+        depth_sub = message_filters.Subscriber(f"/{camera}/{depthTopic}", Image)
+        info_sub = message_filters.Subscriber(f"/{camera}/{infoTopic}", CameraInfo)
         
 
         ts = message_filters.ApproximateTimeSynchronizer([image_sub, depth_sub, info_sub],2,0.3)
@@ -58,7 +62,7 @@ class Hands:
         #de = cv2.resize(im, (w/4, h/4))
 
         self.currentDepth = de
-        self.camframe = imagemsg.header.frame_id
+        self.camframe = f"{self.camera_id}_link" #imagemsg.header.frame_id
 
         # Intrinsic Matrix
         if self.intrinsics:
@@ -123,7 +127,6 @@ class Hands:
                     tipy = hand_landmarks.landmark[marker].y * image_height 
                     tipdepth = depth[int(tipy), int(tipx)]/1000
 
-                    print(f"index depth: {tipdepth}")
 
                     # Deprojection!
                     (x,y,z) = rs2.rs2_deproject_pixel_to_point(self.intrinsics, [tipx, tipy], tipdepth)
@@ -173,10 +176,10 @@ class Hands:
             #     mp_drawing.plot_landmarks(hand_world_landmarks, mp_hands.HAND_CONNECTIONS, azimuth=5)
     
     @staticmethod
-    def main(*args, rate, **kwargs):
-        rospy.init_node('hands')
-        d = Hands(*args, **kwargs)
-        rate = rospy.Rate(rate)
+    def main(a,b,c,d):
+        
+        d = Hands(a,b,c,d)
+        rate = rospy.Rate(10)
         while not rospy.is_shutdown():
             d._findHands()
             rate.sleep()

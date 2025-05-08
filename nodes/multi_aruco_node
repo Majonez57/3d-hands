@@ -57,8 +57,6 @@ class CameraArucoDetector:
 
         self.tf_listen = tf.TransformListener()
         
-
-
         rospy.loginfo(f"{camera_id} aruco node is UP")
         rospy.spin()
 
@@ -267,9 +265,12 @@ if __name__ == '__main__':
 
     parser.add_argument('-c', '--cameras', nargs='?', help="Comma-separated camera IDS, defauls to 'camera'.", default='camera')
 
-    args = parser.parse_args()
+    argv = rospy.myargv()[1:] # this works for some reason I dont understand
+    args = parser.parse_args(argv)
     
     mine = args.cameras.split(',')
+    
+    #rospy.logwinfo(f"TEST {mine}")
 
     try:
         node = MultiCameraArucoNode(camera_ids=mine)

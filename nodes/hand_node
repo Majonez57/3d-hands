@@ -2,19 +2,21 @@
 
 import argparse
 from hands import Hands
-import sys
+import rospy
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Art detects and publisht the information of spotted hands")
 
-    parser.add_argument('--imageTopic2D', nargs='?', type=str, default="/cam2/color/image_raw", help="The ROS topic which has the image input")
-    parser.add_argument('--depthTopic', nargs='?', type=str, default="/cam2/aligned_depth_to_color/image_raw", help="The ROS topic which has the depth image input")
-    parser.add_argument('--infoTopic', nargs='?', type=str, default="/cam2/aligned_depth_to_color/camera_info", help="The ROS topic which has the depth image camera information")
+    parser.add_argument('--imageTopic2D', nargs='?', type=str, default="color/image_raw", help="The ROS topic which has the image input")
+    parser.add_argument('--depthTopic', nargs='?', type=str, default="aligned_depth_to_color/image_raw", help="The ROS topic which has the depth image input")
+    parser.add_argument('--infoTopic', nargs='?', type=str, default="aligned_depth_to_color/camera_info", help="The ROS topic which has the depth image camera information")
 
 
-
-    parser.add_argument('--rate', nargs='?', type=int, default=60, help="The maximum rate of detection from this node")
-
-    args = parser.parse_args(sys.argv[4:])
+    #parser.add_argument('--rate', nargs='?', type=int, default=60, help="The maximum rate of detection from this node")
     
-    Hands.main(**vars(args))
+    parser.add_argument("-c", "--camera", nargs='?', type=str, default='camera')
+
+    argv = rospy.myargv()[1:]
+    args = parser.parse_args(argv)
+    
+    Hands.main(args.imageTopic2D, args.depthTopic, args.infoTopic, args.camera)
