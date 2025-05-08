@@ -13,17 +13,19 @@ class HandVisualizer:
     
     # landmarks: The points to visualize. If empty, all points published in the hand
     #            topic will be visualized.
-    def __init__(self, handTopic3d="/hand_3d", landmarks=[], frame_id='camera_link'):
+    def __init__(self, handTopic3d="/hand_3d", landmarks=[]):
 
         self.pub = rospy.Publisher('hand_marker', Marker, queue_size=10)
         self.sub = rospy.Subscriber("/hand_3d", HandResult3D, self._hand_callback)
 
         self.landmarks = landmarks
-        self.frame_id = frame_id
+        self.frame_id = None
 
         rospy.spin()
 
     def _hand_callback(self, msg: HandResult3D):
+
+        self.frame_id = msg.header.frame_id
         
         marker = Marker()
         marker.header.stamp = rospy.Time.now()

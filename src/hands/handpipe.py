@@ -1,4 +1,5 @@
 # This file uses google MediaPipe to detect hand landmarks from a 3D Camera
+# And publish them onto a ROS topic
 import rospy
 import cv_bridge
 import mediapipe as mp
@@ -17,10 +18,11 @@ mp_drawing = mp.solutions.drawing_utils
 mp_drawing_styles = mp.solutions.drawing_styles
 mp_hands = mp.solutions.hands
 
+# export ROS_MASTER_URI=http://172.22.248.161:11311
 # roslaunch realsense2_camera rs_camera.launch align_depth:=true color_width:=424 color_height:=240 color_fps:=60 filters:=pointcloud
 
 class Hands:
-    def __init__(self, imageTopic2D, depthTopic, infoTopic):
+    def __init__(self, imageTopic2D: str, depthTopic: str, infoTopic: str):
 
         self.bridge = cv_bridge.CvBridge()
 
@@ -41,6 +43,8 @@ class Hands:
         self.currentDepth = None
         self.intrinsics = None
         self.handModel = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.3, min_tracking_confidence=0.3)
+        
+        self.camframe = None
     
     def _onImages(self, imagemsg, depthmsg, cameraInfo):
         im = self.bridge.imgmsg_to_cv2(imagemsg, desired_encoding='bgr8')
@@ -54,6 +58,7 @@ class Hands:
         #de = cv2.resize(im, (w/4, h/4))
 
         self.currentDepth = de
+        self.camframe = imagemsg.header.frame_id
 
         # Intrinsic Matrix
         if self.intrinsics:
@@ -107,7 +112,7 @@ class Hands:
             hand_markers = [0,1,4,5,8,9,12,13,16,17,20]
 
             hand_result = HandResult3D()
-            hand_result.header.frame_id = 'camera_link' # TODO dynamic
+            hand_result.header.frame_id = self.camframe
             hand_result.header.stamp = rospy.Time.now()
 
             landmarks = []

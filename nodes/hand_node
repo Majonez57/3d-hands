@@ -7,9 +7,9 @@ import sys
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Art detects and publisht the information of spotted hands")
 
-    parser.add_argument('--imageTopic2D', nargs='?', type=str, default="/camera/color/image_raw", help="The ROS topic which has the image input")
-    parser.add_argument('--depthTopic', nargs='?', type=str, default="/camera/aligned_depth_to_color/image_raw", help="The ROS topic which has the depth image input")
-    parser.add_argument('--infoTopic', nargs='?', type=str, default="/camera/aligned_depth_to_color/camera_info", help="The ROS topic which has the depth image camera information")
+    parser.add_argument('--imageTopic2D', nargs='?', type=str, default="/cam2/color/image_raw", help="The ROS topic which has the image input")
+    parser.add_argument('--depthTopic', nargs='?', type=str, default="/cam2/aligned_depth_to_color/image_raw", help="The ROS topic which has the depth image input")
+    parser.add_argument('--infoTopic', nargs='?', type=str, default="/cam2/aligned_depth_to_color/camera_info", help="The ROS topic which has the depth image camera information")
 
 
 
