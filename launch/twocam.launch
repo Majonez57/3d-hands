@@ -13,7 +13,7 @@
 
   <include file="$(find realsense2_camera)/launch/rs_camera.launch">
     <arg name="camera" value="cam2"/>
-    <arg name="serial_no" value="105422061428"/>
+    <arg name="serial_no" value="216322070201"/>
     <arg name="align_depth" value="true"/>
     <arg name="color_width" value="424"/>
     <arg name="color_height" value="240"/>
@@ -29,8 +29,10 @@
   <node pkg="art_detection" type="hand_node" name="cam1_hands" output="screen" args="--camera cam1"/>
   <node pkg="art_detection" type="hand_node" name="cam2_hands" output="screen" args="--camera cam2"/>
 
-  <!-- Launch art_detection nodes 
+  <!-- Launch art_detection nodes  -->
   
-  <node pkg="art_detection" type="hand_viz" name="hand_viz" output="screen"/> -->
+  <node pkg="art_detection" type="hand_viz" name="hand_viz" output="screen" args="--cameras cam1,cam2"/>
+
+  <node pkg="rviz" type="rviz" name="rviz" args="-d (find art-detection)/rviz/m.rviz"/>
 
 </launch>

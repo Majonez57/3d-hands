@@ -3,6 +3,9 @@
 import rospy
 from visualization_msgs.msg import Marker
 from art_detection.msg import HandLandmark3D, HandResult3D
+import argparse
+from multiprocessing import Process
+from time import sleep
 
 ###
 # This file turns published HandResult3D(s) into marker points
@@ -13,17 +16,23 @@ class HandVisualizer:
     
     # landmarks: The points to visualize. If empty, all points published in the hand
     #            topic will be visualized.
-    def __init__(self, handTopic3d="/hand_3d", landmarks=[]):
+    def __init__(self, cameras=[""], landmarks=[]):
+        rospy.init_node('hand_visualizer')
 
-        self.pub = rospy.Publisher('hand_marker', Marker, queue_size=10)
-        self.sub = rospy.Subscriber("/hand_3d", HandResult3D, self._hand_callback)
+        self.sub = {}
+        self.pub = {}
+
+        for handTopic3d in cameras:
+            self.pub[handTopic3d] = rospy.Publisher(f'{handTopic3d}/hand_marker', Marker, queue_size=10)
+            self.sub[handTopic3d] = rospy.Subscriber(f"{handTopic3d}/hand_3d", HandResult3D, self._hand_callback, (handTopic3d))
 
         self.landmarks = landmarks
         self.frame_id = None
 
         rospy.spin()
 
-    def _hand_callback(self, msg: HandResult3D):
+    def _hand_callback(self, msg: HandResult3D, args: list):
+        camera = args
 
         self.frame_id = msg.header.frame_id
         
@@ -43,11 +52,18 @@ class HandVisualizer:
             if self.landmarks == [] or landmark in self.landmarks:
                 marker.points.append(landmark.point)
         
-        self.pub.publish(marker)
+        self.pub[camera].publish(marker)
 
 
 if __name__ == "__main__":
-    rospy.init_node('hand_visualizer')
-    rospy.loginfo("Starting Hand3D Marker Node")
+    parser = argparse.ArgumentParser()
 
-    HandVisualizer()
+    parser.add_argument("-c", "--cameras", nargs="?", type=str, default="")
+    argv = rospy.myargv()[1:]
+    args = parser.parse_args(argv)
+
+    cameras = args.cameras.split(',')
+    rospy.loginfo(f"Starting Hand3D Marker Node with: {cameras}")
+    print("#" + str(cameras))
+
+    HandVisualizer(cameras=cameras)

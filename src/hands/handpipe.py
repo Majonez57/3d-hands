@@ -30,7 +30,7 @@ class Hands:
 
         self.publishers = {
             "image_with_hands": rospy.Publisher(f'{camera}_image_with_hands', Image, queue_size=1),
-            "3D_hand" : rospy.Publisher(f'{camera}_hand_3d', HandResult3D, queue_size=2)
+            "3D_hand" : rospy.Publisher(f'{camera}/hand_3d', HandResult3D, queue_size=2)
         }
         
         print(f"/{camera}/{imageTopic2D}")
