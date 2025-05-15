@@ -2,66 +2,86 @@
 
 import rospy
 from art_detection.msg import HandResult3D, HandLandmark3D
-import numpy
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import PointStamped
 import time
 import argparse
 import csv 
 from collections import defaultdict
 import os
+import threading
+import tf
 
-trajectories = defaultdict(list)
+# Trajectories are now stored per topic
+trajectories_per_topic = defaultdict(lambda: defaultdict(list))
+lock = threading.Lock()
 
-# When this file is run, hand trajectories are recorded
-# and saved as CSV
+# Makes a callback for each topic
+def make_topic_callback(topic_name, target_frame):
+    def points_callback(msg: HandResult3D):
+        listener = tf.TransformListener()
+        t = msg.header.stamp.to_sec()
+        rospy.loginfo(f"Callback at t:{t} from topic: {topic_name}")
 
-def points_callback(msg: HandResult3D):
-    t = msg.header.stamp.to_sec()
+        with lock:
+            source_frame = msg.header.frame_id
 
-    rospy.loginfo(f"Callback at t:{t}")
+            listener.waitForTransform(target_frame, source_frame, rospy.Time(0), rospy.Duration(0.1))
+            (trans, rot) = listener.lookupTransform(target_frame, source_frame, rospy.Time(0))
+            for result3D in msg.landmarks:
+                # Fumble required for not stamping the point...
+                hpoint = PointStamped()
+                hpoint.header.frame_id = source_frame
+                hpoint.header.stamp = rospy.Time(0)
+                hpoint.point.x = result3D.point.x
+                hpoint.point.y = result3D.point.y
+                hpoint.point.z = result3D.point.z
 
-    # List of landmarks
-    for result3D in msg.landmarks:
-        result3D: HandLandmark3D
-        x = result3D.point.x
-        y = result3D.point.y
-        z = result3D.point.z 
-        id = result3D.landmarkID
+                tranformed_point = listener.transformPoint(target_frame, hpoint)
 
-        trajectories[id].append((t, x, y, z))
+                x, y, z = tranformed_point.point.x, tranformed_point.point.y, tranformed_point.point.z
+                landmark_id = result3D.landmarkID
 
-def save_trajectory():
-    path = f"src/art-detection/data/{filename}"
-    if not os.path.exists(path):
-        os.mkdir(path)
+                trajectories_per_topic[topic_name][landmark_id].append((t, x, y, z))
+    return points_callback
 
-    for landmarkID, trajectory in trajectories.items():
-        filepath = f"{path}/landmark_{landmarkID}.csv"
-        with open(filepath, 'w+') as f:
-            writer = csv.writer(f)
-            writer.writerow(['time', 'x', 'y', 'z'])
-            for row in trajectory:
-                writer.writerow(row)
-    
+def save_trajectories(base_output_dir):
+    base_path = os.path.join("src/art-detection/data", base_output_dir)
+    os.makedirs(base_path, exist_ok=True)
 
-def main():
+    with lock:
+        for topic_name, landmarks_dict in trajectories_per_topic.items():
+            topic_dir = os.path.join(base_path, topic_name.replace('/', '-'))
+            os.makedirs(topic_dir, exist_ok=True)
+            for landmark_id, trajectory in landmarks_dict.items():
+                filepath = os.path.join(topic_dir, f"landmark_{landmark_id}.csv")
+                with open(filepath, 'w+') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['time', 'x', 'y', 'z'])
+                    for row in trajectory:
+                        writer.writerow(row)
 
+def main(topics, filename, markerframe):
     input("Press ENTER to begin recording, then use ctrl+C to end.")
-    time.sleep(2)
-    
+    time.sleep(1)
     print("RECORDING...")
-    
-    rospy.init_node('trajectory_recorder')
-    sub = rospy.Subscriber("/hand_3d", HandResult3D, points_callback)
-    
-    rospy.on_shutdown(save_trajectory)
-    
+
+    rospy.init_node('trajectory_recorder', anonymous=True)
+
+    subscribers = []
+    for topic in topics:
+        rospy.loginfo(f"Subscribing to {topic}")
+        cb = make_topic_callback(topic, markerframe)
+        sub = rospy.Subscriber(topic, HandResult3D, cb)
+        subscribers.append(sub)
+
+    rospy.on_shutdown(lambda: save_trajectories(filename))
     rospy.spin()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-f", "-filename", type=str, required=True)
+    parser.add_argument("-f", "--filename", type=str, required=True, help="Base output folder name")
+    parser.add_argument("-t", "--topics", type=str, required=True, help="List of ROS topics to subscribe to")
+    parser.add_argument("-m", "--markerframe", default="marker_9", help="The frame of reference for recording")
 
     args = parser.parse_args()
-    filename = args.f
-    main()
+    main(args.topics.split(','), args.filename, args.markerframe)

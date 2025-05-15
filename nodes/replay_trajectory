@@ -6,97 +6,117 @@ from geometry_msgs.msg import Point
 from std_msgs.msg import Header
 import os
 import pandas as pd
+import threading
+import argparse
 
-# When this file is run, hand trajectories are recorded
-# and saved as CSV
-# EXAMPLE USAGE: 
-# rosrun art_detection replay_trajectory.py _directory:=test _landmark_ids:="[0,1,4,5,8]"
-
-def publish_trajectories(pub: rospy.Publisher, trajectories, frame_id='camera_link'):
-    # df magic
+def publish_trajectories(pub: rospy.Publisher, trajectories, frame_id='marker_9'):
     timewise_df = pd.concat(trajectories.values(), keys=trajectories.keys(), names=['landmarkID'])
     timewise_df.reset_index(level='landmarkID', inplace=True) 
     timewise_df.sort_values(by='time', inplace=True)
 
     start_time = rospy.Time.now().to_sec()
-    rate = rospy.Rate(1000) # High rate for precise durations 
+    rate = rospy.Rate(1000)
+
+    min_time = timewise_df['time'].min()
 
     for time, group in timewise_df.groupby('time'):
-        current_time = rospy.Time.now().to_sec() 
-        elapsed_time = current_time - start_time
-        sleep_time = time - timewise_df['time'].min() -elapsed_time
-        
+        elapsed = rospy.Time.now().to_sec() - start_time
+        sleep_time = time - min_time - elapsed
         if sleep_time > 0:
             rospy.sleep(sleep_time)
 
-        landmarks = []
-        for _, row in group.iterrows():
-            point = Point(x=row['x'],y=row['y'],z=row['z'])
-            landmark = HandLandmark3D(
-                point = point,
-                landmarkID = int(row['landmarkID'])
-            )
-            landmarks.append(landmark)
-        
-        topub = HandResult3D(
-            header= Header(
-                stamp=rospy.Time.now(),
-                frame_id=frame_id #TODO dytnamic
-                ),
-            landmarks = landmarks
-        )
+        landmarks = [
+            HandLandmark3D(
+                point=Point(x=row['x'], y=row['y'], z=row['z']),
+                landmarkID=int(row['landmarkID'])
+            ) for _, row in group.iterrows()
+        ]
 
-        pub.publish(topub)
-        rospy.loginfo(f"Published Landmarks at {time}")
+        msg = HandResult3D(
+            header=Header(stamp=rospy.Time.now(), frame_id=frame_id),
+            landmarks=landmarks
+        )
+        pub.publish(msg)
+        rospy.loginfo(f"Published to {pub.resolved_name} at {time}")
         rate.sleep()
 
-def load_trajectories(dir_path: str, landmark_ids):
-    # Loads trajectory data from CSV files
-    rospy.logdebug(dir_path)
-    
+def detect_available_landmarks(folder_path):
+    landmark_ids = []
+    for fname in os.listdir(folder_path):
+        if fname.startswith("landmark_") and fname.endswith(".csv"):
+            try:
+                lid = int(fname[len("landmark_"):-len(".csv")])
+                landmark_ids.append(lid)
+            except ValueError:
+                continue
+    return sorted(landmark_ids)
+
+def load_trajectories(folder_path, requested_ids=None):
+    available_ids = detect_available_landmarks(folder_path)
+    if requested_ids is None:
+        rospy.loginfo(f"No landmark IDs provided. Using all available: {available_ids}")
+        target_ids = available_ids
+    else:
+        missing = [lid for lid in requested_ids if lid not in available_ids]
+        for lid in missing:
+            rospy.logwarn(f"Requested landmark ID {lid} not found in {folder_path}. Skipping.")
+        target_ids = [lid for lid in requested_ids if lid in available_ids]
+
     trajectories = {}
-    for id in landmark_ids:
-        filepath = path = f"src/art-detection/data/{dir_path}/landmark_{id}.csv"
-        if not os.path.isfile(filepath):
-            rospy.logerr("The landmark {id} was not recorded! Skipping...")
-            continue
-        else:
-            df = pd.read_csv(filepath)
-            trajectories[id] = df 
-    
+    for lid in target_ids:
+        csv_path = os.path.join(folder_path, f"landmark_{lid}.csv")
+        df = pd.read_csv(csv_path)
+        trajectories[lid] = df
+
     return trajectories
 
-def main():
-
-    input("Press ENTER to begin replay")    
-
-    rospy.init_node('trajectory_replay', anonymous=True)
-    topic_name = rospy.get_param('~topic_name', '/hand_3d')
-    data_dir = rospy.get_param("~directory", './')
-    landmark_ids = rospy.get_param("~landmark_ids", [])
-
-    if not landmark_ids:
-        rospy.logwarn("No landmark ids were provided. Defaulting to 9")
-        landmark_ids = [9]
-
-    path = f"src/art-detection/data/{data_dir}"
-    if not os.path.exists(path):
-        rospy.logerr(f"The provided trajectory name {data_dir} is invalid. Exiting.")
-        return
-    
-    pub = rospy.Publisher("/hand_3d", HandResult3D, queue_size=10)
+def replay_topic(topic_dir, requested_ids, root_path):
+    topic_name = topic_dir.replace('-', '/')
+    folder_path = os.path.join(root_path, topic_dir)
+    pub = rospy.Publisher(topic_name, HandResult3D, queue_size=10)
     rospy.sleep(1)
 
-    trajectories = load_trajectories(data_dir, landmark_ids)
+    rospy.loginfo(f"Loading from {folder_path} for topic {topic_name}")
+    trajectories = load_trajectories(folder_path, requested_ids)
     if not trajectories:
-        rospy.logerr(f"No valid trajectories loaded. Exiting.")
-        return  rospy.loginfo("REPLAYING...")
-    
-    
-    rospy.loginfo("REPLAYING...")
+        rospy.logwarn(f"No valid trajectories found in {folder_path}. Skipping...")
+        return
+
     publish_trajectories(pub, trajectories)
-    
-    rospy.logwarn("Replay finished. Exiting.")
+
+def main():
+    parser = argparse.ArgumentParser(description="Replay hand trajectories from multiple topics")
+    parser.add_argument("-d", "--directory", default="/home/chart1/metrics_ws/src/art-detection/data/T4",
+                        help="Base directory containing topic subfolders with trajectories")
+    parser.add_argument("-l", "--landmark_ids", nargs='*', type=int, default=None,
+                        help="List of landmark IDs to replay; if omitted, all landmarks are replayed")
+    args = parser.parse_args()
+
+    input("Press ENTER to begin replay")
+
+    rospy.init_node('trajectory_replay', anonymous=True)
+
+    base_dir = args.directory
+    requested_ids = args.landmark_ids
+
+    root_path = os.path.join("src/art-detection/data", base_dir)
+    if not os.path.isdir(root_path):
+        rospy.logerr(f"Invalid directory: {root_path}")
+        return
+
+    topic_dirs = [d for d in os.listdir(root_path)
+                  if os.path.isdir(os.path.join(root_path, d))]
+
+    threads = []
+    for topic_dir in topic_dirs:
+        t = threading.Thread(target=replay_topic, args=(topic_dir, requested_ids, root_path))
+        t.start()
+        threads.append(t)
+
+    for t in threads:
+        t.join()
+
+    rospy.loginfo("Replay finished.")
 
 if __name__ == "__main__":
     main()
