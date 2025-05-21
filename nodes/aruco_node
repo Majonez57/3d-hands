@@ -70,17 +70,17 @@ class CameraArucoDetector:
         if self.camera_matrix is None:
             # Cannot process image until calibration parameters are available.
             return
-        elif self.calibrated == True:
-            # Camera is static, so we don't need to keep doing image maths
-            self.lastTransform.header.stamp = rospy.Time.now()
-            self.tf_broadcaster.sendTransform(self.lastTransform)
-            return
         try:
             #rospy.loginfo(f"Camera '{self.camera_id}' image received.")
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
         except Exception as e:
             rospy.logerr("CV Bridge error in camera '{}': {}".format(self.camera_id, e))
 
+        if self.calibrated == True:
+            # Camera is static, so we don't need to keep doing image maths
+            self.lastTransform.header.stamp = rospy.Time.now()
+            self.tf_broadcaster.sendTransform(self.lastTransform)
+        
         # Detect markers
         corners, ids, _ = self.detector.detectMarkers(cv_image)
 
@@ -100,91 +100,89 @@ class CameraArucoDetector:
                 # Draw marker and axis for debugging (optional)
                 aruco.drawDetectedMarkers(cv_image, corners, ids)
                 cv2.drawFrameAxes(cv_image, self.camera_matrix, self.dist_coeffs, rvec, tvec, self.marker_length * 0.5)
-                
-            
-                
-                self.lastdet = rospy.get_time()
+                            
+                #If we've not calibrated yet...
+                if not self.calibrated:
+                    # Convert rotation vector to quaternion
+                    R_matrix, _ = cv2.Rodrigues(rvec)
+                    current_q = self.rotation_matrix_to_quaternion(R_matrix)
+                    current_t = tvec[0] #Flatten
 
-                # Convert rotation vector to quaternion
-                R_matrix, _ = cv2.Rodrigues(rvec)
-                current_q = self.rotation_matrix_to_quaternion(R_matrix)
-                current_t = tvec[0] #Flatten
+                    smooth_t = current_t
+                    smooth_q = current_q
 
-                smooth_t = current_t
-                smooth_q = current_q
+                    self.tf_listen.waitForTransform(f"{self.camera_id}_link", self.camera_frame, rospy.Time(0), rospy.Duration(0.1))
+                    (trans, rot) = self.tf_listen.lookupTransform(f"{self.camera_id}_link", self.camera_frame, rospy.Time(0))
 
-                self.tf_listen.waitForTransform(f"{self.camera_id}_link", self.camera_frame, rospy.Time(0), rospy.Duration(0.1))
-                (trans, rot) = self.tf_listen.lookupTransform(f"{self.camera_id}_link", self.camera_frame, rospy.Time(0))
+                    link_to_frame = tf.transformations.concatenate_matrices(
+                        tf.transformations.translation_matrix(trans),
+                        tf.transformations.quaternion_matrix(rot)
+                    )
 
-                link_to_frame = tf.transformations.concatenate_matrices(
-                    tf.transformations.translation_matrix(trans),
-                    tf.transformations.quaternion_matrix(rot)
-                )
+                    frame_to_link = tf.transformations.inverse_matrix(link_to_frame)
 
-                frame_to_link = tf.transformations.inverse_matrix(link_to_frame)
+                    frame_to_tag = tf.transformations.concatenate_matrices(
+                        tf.transformations.translation_matrix(smooth_t),
+                        tf.transformations.quaternion_matrix(smooth_q)
+                    )
 
-                frame_to_tag = tf.transformations.concatenate_matrices(
-                    tf.transformations.translation_matrix(smooth_t),
-                    tf.transformations.quaternion_matrix(smooth_q)
-                )
+                    tag_to_frame = tf.transformations.inverse_matrix(frame_to_tag)
 
-                tag_to_frame = tf.transformations.inverse_matrix(frame_to_tag)
-
-                tag_to_cam = tf.transformations.concatenate_matrices(tag_to_frame, frame_to_link)
-                # combined = tf.transformations.inverse_matrix(combined)
-                final_t = tf.transformations.translation_from_matrix(tag_to_cam)
-                final_q = tf.transformations.quaternion_from_matrix(tag_to_cam)
+                    tag_to_cam = tf.transformations.concatenate_matrices(tag_to_frame, frame_to_link)
+                    # combined = tf.transformations.inverse_matrix(combined)
+                    final_t = tf.transformations.translation_from_matrix(tag_to_cam)
+                    final_q = tf.transformations.quaternion_from_matrix(tag_to_cam)
 
 
-                
-                t = TransformStamped()
-                t.header.stamp = msg.header.stamp
-                
-                t.header.frame_id = f"marker_{marker_id}"
-                t.child_frame_id = f"{self.camera_id}_link" #self.camera_frame
-                #t.child_frame_id = f"{self.camera_id}_marker_{marker_id}"
-                #t.header.frame_id = self.camera_frame
-                
-                t.transform.translation.x = final_t[0]
-                t.transform.translation.y = final_t[1]
-                t.transform.translation.z = final_t[2]
-                t.transform.rotation.x = final_q[0]
-                t.transform.rotation.y = final_q[1]
-                t.transform.rotation.z = final_q[2]
-                t.transform.rotation.w = final_q[3]
+                    
+                    t = TransformStamped()
+                    t.header.stamp = msg.header.stamp
+                    
+                    t.header.frame_id = f"marker_{marker_id}"
+                    t.child_frame_id = f"{self.camera_id}_link" #self.camera_frame
+                    #t.child_frame_id = f"{self.camera_id}_marker_{marker_id}"
+                    #t.header.frame_id = self.camera_frame
+                    
+                    t.transform.translation.x = final_t[0]
+                    t.transform.translation.y = final_t[1]
+                    t.transform.translation.z = final_t[2]
+                    t.transform.rotation.x = final_q[0]
+                    t.transform.rotation.y = final_q[1]
+                    t.transform.rotation.z = final_q[2]
+                    t.transform.rotation.w = final_q[3]
 
-                self.lastTransform = t
-                self.calibrated = True
-                self.tf_broadcaster.sendTransform(self.lastTransform)
+                    self.lastTransform = t
+                    self.calibrated = True
+                    self.tf_broadcaster.sendTransform(self.lastTransform)
 
-                # Create a visualization marker for RViz
-                marker = Marker()
-                marker.header.frame_id = self.camera_frame
-                marker.header.stamp = msg.header.stamp
-                marker.ns = "{}_aruco".format(self.camera_id)
-                marker.id = marker_id
-                marker.type = Marker.CUBE
-                marker.action = Marker.ADD
-                marker.pose.position.x = smooth_t[0]
-                marker.pose.position.y = smooth_t[1]
-                marker.pose.position.z = smooth_t[2]
-                marker.pose.orientation.x = smooth_q[0]
-                marker.pose.orientation.y = smooth_q[1]
-                marker.pose.orientation.z = smooth_q[2]
-                marker.pose.orientation.w = smooth_q[3]
-                marker.scale.x = self.marker_length
-                marker.scale.y = self.marker_length
-                marker.scale.z = 0.005  # Thin marker visualization
-                marker.color.a = 0.8
-                marker.color.r = 0.0
-                marker.color.g = 1.0
-                marker.color.b = 0.0
-                marker_array.markers.append(marker)
+                    # Create a visualization marker for RViz
+                    marker = Marker()
+                    marker.header.frame_id = self.camera_frame
+                    marker.header.stamp = msg.header.stamp
+                    marker.ns = "{}_aruco".format(self.camera_id)
+                    marker.id = marker_id
+                    marker.type = Marker.CUBE
+                    marker.action = Marker.ADD
+                    marker.pose.position.x = smooth_t[0]
+                    marker.pose.position.y = smooth_t[1]
+                    marker.pose.position.z = smooth_t[2]
+                    marker.pose.orientation.x = smooth_q[0]
+                    marker.pose.orientation.y = smooth_q[1]
+                    marker.pose.orientation.z = smooth_q[2]
+                    marker.pose.orientation.w = smooth_q[3]
+                    marker.scale.x = self.marker_length
+                    marker.scale.y = self.marker_length
+                    marker.scale.z = 0.005  # Thin marker visualization
+                    marker.color.a = 0.8
+                    marker.color.r = 0.0
+                    marker.color.g = 1.0
+                    marker.color.b = 0.0
+                    marker_array.markers.append(marker)
 
-                # Publish the MarkerArray for visualization in RViz
-                self.marker_pub.publish(marker_array)
-            
-        # Optionally, display the processed image (for debugging)
+                    # Publish the MarkerArray for visualization in RViz
+                    self.marker_pub.publish(marker_array)
+                    rospy.loginfo(f"Tf published for {self.camera_id}")
+
         cv2.imshow(f"cam_{self.camera_id}", cv_image)
         cv2.waitKey(1)
 

@@ -46,7 +46,7 @@ class Hands:
         self.currentImage = None
         self.currentDepth = None
         self.intrinsics = None
-        self.handModel = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.3, min_tracking_confidence=0.3)
+        self.handModel = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.2, min_tracking_confidence=0.3)
         
         self.camframe = None
     
